@@ -12,6 +12,7 @@ Gem::Specification.new do |s|
   s.license       = 'MIT'
   s.has_rdoc      = false
   s.require_paths = ['lib']
+  s.executables   = Dir.glob('bin/**/*').map { |file| File.basename(file) }
   s.files         = Dir.glob('{bin,lib}/**/*')
   s.test_files    = Dir['test/*.rb']
 
