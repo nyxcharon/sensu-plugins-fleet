@@ -12,6 +12,7 @@
 #
 # DEPENDENCIES:
 #   gem: sensu-plugin
+#   gem: fleet = 0.9.0
 #
 # USAGE:
 #
