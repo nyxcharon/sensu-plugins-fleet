@@ -24,7 +24,7 @@
 #
 
 require 'sensu-plugin/check/cli'
-require 'os'
+require 'fleet'
 
 #
 # Check for dead/invactive fleet units
@@ -45,34 +45,25 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
       warning 'No endpoint specified'
     end
 
-    #Run fleetctl
-    bin_dir = File.expand_path(File.dirname(__FILE__))
-    if OS.osx?
-      shell_script_path = File.join(bin_dir, 'fleetctl-mac')
-    elsif OS.linux?
-      shell_script_path = File.join(bin_dir, 'fleetctl-linux')
-    else
-      warning 'Running on unsupported platform'
+    #Setup fleet client and fetch services
+    Fleet.configure do |fleet|
+      fleet.fleet_api_url = endpoint
     end
+    client = Fleet.new
+    services = client.list
 
-    #puts "#{shell_script_path} --endpoint #{endpoint} list-units"
-    output=`#{shell_script_path} --endpoint #{endpoint} list-units 2>&1`
-    #puts output
-    #Parse output
-    if output.include?('Unable to initialize client: URL scheme undefined')
-      warning "Invalid endpoint specified"
-    end
-
-    failed=false
-    failed_units=""
-    output.each_line do |line|
-      if line.include?('failed')
-        failed=true
+    #Iterate over each unit file and search for failures
+    failed_services = false
+    service_list = ""
+    services.each do |entry|
+      if not entry[:sub_state].include?("running")
+          failed_services = true
+          service_list += entry[:name]+" "+entry[:machine_ip]+","
       end
     end
 
-    if failed
-      critical "Found failed units!"
+    if failed_services
+      critical "Found failed unit(s)!: "+service_list
     else
       ok "All units running"
     end

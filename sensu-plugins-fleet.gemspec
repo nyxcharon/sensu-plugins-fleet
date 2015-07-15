@@ -19,6 +19,7 @@ Gem::Specification.new do |s|
   s.add_dependency('json')
   s.add_dependency('os')
   s.add_dependency('mixlib-cli', '>= 1.1.0')
+  s.add_dependency('fleet-api', '0.9.0')
 
   s.add_development_dependency('rake')
   s.add_development_dependency('minitest')
