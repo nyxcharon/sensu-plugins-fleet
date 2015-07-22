@@ -41,20 +41,37 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
            short: '-f FILTER',
            long: '--filter FILTER'
 
+ option :units,
+         description: 'A comma delimited list of unit names to check',
+         short: '-u UNITS',
+         long: '--units UNITS'
+
   def run
     #Argument setup/parsing/checking
     cli = CheckFleetUnits.new
     cli.parse_options
     endpoint = cli.config[:endpoint]
     filter = cli.config[:filter]
+    units = cli.config[:units]
 
     if not endpoint
-      warning 'No endpoint specified'
+      unknown 'No endpoint specified'
+    end
+
+    if filter and units
+      unknown 'Filter and units flag specified, only 1 can be used'
     end
 
     if not filter
       filter = ''
     end
+
+    if units and not units.include?(",")
+      unknown 'Invalid formatting for units'
+    elsif units
+      units = units.split(',')
+    end
+
 
     #Setup fleet client and fetch services
     Fleet.configure do |fleet|
@@ -67,9 +84,18 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     failed_services = false
     service_list = ""
     services.each do |entry|
-      if not entry[:sub_state].include?("running") and entry[:name].include?(filter)
-          failed_services = true
-          service_list += entry[:name]+" "+entry[:machine_ip]+", "
+        if units
+           units.each do |unit|
+             if not entry[:sub_state].include?("running") and entry[:name].include?(unit)
+               failed_services = true
+               service_list += entry[:name]+" "+entry[:machine_ip]+", "
+             end
+           end
+        else
+          if not entry[:sub_state].include?("running") and entry[:name].include?(filter)
+            failed_services = true
+            service_list += entry[:name]+" "+entry[:machine_ip]+", "
+          end
       end
     end
 
