@@ -34,16 +34,26 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
   option :endpoint,
          description: 'The fleetctl endpoint address',
          short: '-e ENDPOINT',
-         long: '--endpoint'
+         long: '--endpoint ENDPOINT'
+
+  option :filter,
+           description: 'Filter units so they contain FILTER',
+           short: '-f FILTER',
+           long: '--filter FILTER'
 
   def run
     #Argument setup/parsing/checking
     cli = CheckFleetUnits.new
     cli.parse_options
     endpoint = cli.config[:endpoint]
+    filter = cli.config[:filter]
 
     if not endpoint
       warning 'No endpoint specified'
+    end
+
+    if not filter
+      filter = ''
     end
 
     #Setup fleet client and fetch services
@@ -57,9 +67,9 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     failed_services = false
     service_list = ""
     services.each do |entry|
-      if not entry[:sub_state].include?("running")
+      if not entry[:sub_state].include?("running") and entry[:name].include?(filter)
           failed_services = true
-          service_list += entry[:name]+" "+entry[:machine_ip]+","
+          service_list += entry[:name]+" "+entry[:machine_ip]+", "
       end
     end
 
