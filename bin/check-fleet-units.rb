@@ -32,14 +32,9 @@ require 'fleet'
 #
 class CheckFleetUnits < Sensu::Plugin::Check::CLI
   option :endpoint,
-         description: 'The fleetctl endpoint address',
-         short: '-e ENDPOINT',
-         long: '--endpoint ENDPOINT'
-
-  option :filter,
-           description: 'Filter units so they contain FILTER',
-           short: '-f FILTER',
-           long: '--filter FILTER'
+          description: 'The fleetctl endpoint address',
+          short: '-e ENDPOINT',
+          long: '--endpoint ENDPOINT'
 
  option :units,
          description: 'A comma delimited list of unit names to check',
@@ -51,27 +46,11 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     cli = CheckFleetUnits.new
     cli.parse_options
     endpoint = cli.config[:endpoint]
-    filter = cli.config[:filter]
     units = cli.config[:units]
 
     if not endpoint
       unknown 'No endpoint specified'
     end
-
-    if filter and units
-      unknown 'Filter and units flag specified, only 1 can be used'
-    end
-
-    if not filter
-      filter = ''
-    end
-
-    if units and not units.include?(",")
-      unknown 'Invalid formatting for units'
-    elsif units
-      units = units.split(',')
-    end
-
 
     #Setup fleet client and fetch services
     Fleet.configure do |fleet|
@@ -80,30 +59,57 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     client = Fleet.new
     services = client.list
 
-    #Iterate over each unit file and search for failures
-    failed_services = false
-    service_list = ""
-    services.each do |entry|
-        if units
-           units.each do |unit|
-             if not entry[:sub_state].include?("running") and entry[:name].include?(unit)
-               failed_services = true
-               service_list += entry[:name]+" "+entry[:machine_ip]+", "
-             end
-           end
-        else
-          if not entry[:sub_state].include?("running") and entry[:name].include?(filter)
-            failed_services = true
-            service_list += entry[:name]+" "+entry[:machine_ip]+", "
-          end
-      end
+    if not services
+      unknown "Could not fetch fleet units"
     end
 
-    if failed_services
+    if units and units.include?(",") #List of services to check
+      units = units.split(',')
+      service_list = checkUnitList(services,units)
+    elsif units
+      units = [ units ]
+      service_list = checkUnitList(services,units)
+    else #Check everything
+      service_list = checkAllUnits(services)
+    end
+
+    if service_list.length > 0
       critical "Found failed unit(s)!: "+service_list
     else
       ok "All units running"
     end
+  end#End method
 
-  end
-end
+
+  def checkAllUnits(services)
+    service_list = ""
+    services.each do |entry|
+        if not entry[:sub_state].include?("running") and entry[:name].include?(unit)
+             service_list += entry[:name]+" "+entry[:machine_ip]+", "
+        end
+    end
+    return  service_list
+  end #End method
+
+
+  def checkUnitList(services,list)
+    hash = Hash[list.map {|x| [x, false]}]
+    service_list = ""
+    services.each do |entry|
+      hash.each do |k,v|
+        if entry[:sub_state].include?("running") and entry[:name].include?(k)
+          hash[k] = true
+        elsif entry[:name].include?(k)
+          service_list += entry[:name]+" "+entry[:machine_ip]+", "
+        end
+      end
+    end
+
+    if hash.has_value?(false) #We didn't check a service, so warn since it's missing
+      warning 'Could not check all specified services(s)'
+    else
+      return service_list
+    end
+  end #End method
+
+end #End class
