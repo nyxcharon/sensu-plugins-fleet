@@ -57,6 +57,11 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
       fleet.fleet_api_url = endpoint
     end
     client = Fleet.new
+
+    if not client
+      unknown "Could not connect to fleet"
+    end
+
     services = client.list
 
     if not services
