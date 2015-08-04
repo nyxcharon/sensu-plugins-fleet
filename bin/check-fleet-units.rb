@@ -53,20 +53,25 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     end
 
     #Setup fleet client and fetch services
-    Fleet.configure do |fleet|
-      fleet.fleet_api_url = endpoint
-    end
-    client = Fleet.new
+    begin
+      Fleet.configure do |fleet|
+        fleet.fleet_api_url = endpoint
+      end
+      client = Fleet.new
 
-    if not client
+      if not client
+        unknown "Could not connect to fleet"
+      end
+
+      services = client.list
+
+      if not services
+        unknown "Could not fetch fleet units"
+      end
+    rescue
       unknown "Could not connect to fleet"
     end
 
-    services = client.list
-
-    if not services
-      unknown "Could not fetch fleet units"
-    end
 
     if units and units.include?(",") #List of services to check
       units = units.split(',')
