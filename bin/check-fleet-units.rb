@@ -12,7 +12,7 @@
 #
 # DEPENDENCIES:
 #   gem: sensu-plugin
-#   gem: fleet = 0.9.0
+#   gem: fleet >= 1.0.0
 #
 # USAGE:
 #
@@ -58,21 +58,16 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
         fleet.fleet_api_url = endpoint
       end
       client = Fleet.new
-
-      if not client
-        unknown "Could not connect to fleet"
-      end
-
       services = client.list
 
       if not services
         unknown "Could not fetch fleet units"
       end
-    rescue
-      unknown "Could not connect to fleet"
-    end
+   rescue
+     unknown "Could not connect to fleet"
+   end
 
-
+    #
     if units and units.include?(",") #List of services to check
       units = units.split(',')
       service_list = checkUnitList(services,units)
@@ -94,7 +89,7 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
   def checkAllUnits(services)
     service_list = ""
     services.each do |entry|
-        if not entry[:sub_state].include?("running") and entry[:name].include?(unit)
+        if not entry[:sub_state].include?("running")
              service_list += entry[:name]+" "+entry[:machine_ip]+", "
         end
     end
