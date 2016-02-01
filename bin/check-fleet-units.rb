@@ -11,7 +11,6 @@
 #   Linux
 #
 # DEPENDENCIES:
-#   gem: sensu-plugin
 #   gem: fleet >= 1.0.0
 #
 # USAGE:
@@ -34,12 +33,18 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
   option :endpoint,
           description: 'The fleetctl endpoint address',
           short: '-e ENDPOINT',
-          long: '--endpoint ENDPOINT'
+          long: '--endpoint ENDPOINT',
+          required: true
 
- option :units,
-         description: 'A comma delimited list of unit names to check',
-         short: '-u UNITS',
-         long: '--units UNITS'
+  option :units,
+          description: 'A comma delimited list of unit names to check',
+          short: '-u UNITS',
+          long: '--units UNITS'
+
+  option :ignoredead,
+          description: 'Also fail on dead units',
+          short: '-d',
+          default: false
 
   def run
     #Argument setup/parsing/checking
@@ -47,10 +52,6 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     cli.parse_options
     endpoint = cli.config[:endpoint]
     units = cli.config[:units]
-
-    if not endpoint
-      unknown 'No endpoint specified'
-    end
 
     #Setup fleet client and fetch services
     begin
@@ -63,11 +64,10 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
       if not services
         unknown "Could not fetch fleet units"
       end
-   rescue
+    rescue
      unknown "Could not connect to fleet"
-   end
+    end
 
-    #
     if units and units.include?(",") #List of services to check
       units = units.split(',')
       service_list = checkUnitList(services,units)
@@ -89,32 +89,45 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
   def checkAllUnits(services)
     service_list = ""
     services.each do |entry|
-        if not entry[:sub_state].include?("running")
-             service_list += entry[:name]+" "+entry[:machine_ip]+", "
-        end
+      if isUnitFailed(entry)
+        service_list += entry[:name]+" "+entry[:machine_ip]+", "
+      end
     end
     return  service_list
   end #End method
-
 
   def checkUnitList(services,list)
     hash = Hash[list.map {|x| [x, false]}]
     service_list = ""
     services.each do |entry|
       hash.each do |k,v|
-        if entry[:sub_state].include?("running") and entry[:name].include?(k)
+        if isUnitFailed(entry) and entry[:name].include?(k)
+          if not service_list.include?(entry[:name]+" "+entry[:machine_ip]+", ")
+            service_list += entry[:name]+" "+entry[:machine_ip]+", "
+          end
+        end
+        if entry[:name].include?(k)
           hash[k] = true
-        elsif entry[:name].include?(k)
-          service_list += entry[:name]+" "+entry[:machine_ip]+", "
         end
       end
     end
-
     if hash.has_value?(false) #We didn't check a service, so warn since it's missing
       warning 'Could not check all specified services(s)'
     else
       return service_list
     end
   end #End method
+
+  def isUnitFailed(entry)
+    if entry[:sub_state].include?("failed") or entry[:sub_state].include?("dead")
+        if not config[:ignoredead] and entry[:sub_state].include?("dead")
+          return false
+        elsif entry[:sub_state].include?("dead")
+          return true
+        else #otherwise it's failed
+          return true
+        end
+    end
+  end
 
 end #End class
