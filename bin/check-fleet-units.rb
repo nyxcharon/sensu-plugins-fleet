@@ -91,7 +91,6 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
     end
   end#End method
 
-
   def checkAllUnits(services)
     service_list = ""
     services.each do |entry|
