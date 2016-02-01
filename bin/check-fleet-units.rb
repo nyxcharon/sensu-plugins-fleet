@@ -30,6 +30,7 @@ require 'fleet'
 # Check for dead/invactive fleet units
 #
 class CheckFleetUnits < Sensu::Plugin::Check::CLI
+  @@exclude_list = Array.new
   option :endpoint,
           description: 'The fleetctl endpoint address',
           short: '-e ENDPOINT',
@@ -45,6 +46,11 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
           description: 'Also fail on dead units',
           short: '-d',
           default: false
+
+  option :ignore,
+          description: 'A comma delimited list of unit names to ignore',
+          short: '-i UNITS',
+          long: '--i UNITS'
 
   def run
     #Argument setup/parsing/checking
@@ -65,15 +71,15 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
         unknown "Could not fetch fleet units"
       end
     rescue
-     unknown "Could not connect to fleet"
+      unknown "Could not connect to fleet"
     end
 
-    if units and units.include?(",") #List of services to check
-      units = units.split(',')
-      service_list = checkUnitList(services,units)
-    elsif units
-      units = [ units ]
-      service_list = checkUnitList(services,units)
+    if cli.config[:ignore]
+      @@exclude_list = parse_list(cli.config[:ignore])
+    end
+
+    if units
+      service_list = checkUnitList(services,parse_list(units))
     else #Check everything
       service_list = checkAllUnits(services)
     end
@@ -119,6 +125,9 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
   end #End method
 
   def isUnitFailed(entry)
+    if @@exclude_list.include?(entry[:name])
+      return false
+    end
     if entry[:sub_state].include?("failed") or entry[:sub_state].include?("dead")
         if not config[:ignoredead] and entry[:sub_state].include?("dead")
           return false
@@ -127,6 +136,16 @@ class CheckFleetUnits < Sensu::Plugin::Check::CLI
         else #otherwise it's failed
           return true
         end
+    end
+  end
+
+  def parse_list(list)
+    if list and list.include?(',')
+      return list.split(',')
+    elsif list
+      return [ list ]
+    else
+      return ['']
     end
   end
 
