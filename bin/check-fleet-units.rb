@@ -25,127 +25,104 @@
 
 require 'sensu-plugin/check/cli'
 require 'fleet'
+require 'json'
 
-#
 # Check for dead/invactive fleet units
-#
 class CheckFleetUnits < Sensu::Plugin::Check::CLI
-  @@exclude_list = Array.new
+  @exclude_list = Array.[]
   option :endpoint,
-          description: 'The fleetctl endpoint address',
-          short: '-e ENDPOINT',
-          long: '--endpoint ENDPOINT',
-          required: true
+         description: 'The fleetctl endpoint address',
+         short: '-e ENDPOINT',
+         long: '--endpoint ENDPOINT',
+         required: true
 
   option :units,
-          description: 'A comma delimited list of unit names to check',
-          short: '-u UNITS',
-          long: '--units UNITS'
+         description: 'A comma delimited list of unit names to check',
+         short: '-u UNITS',
+         long: '--units UNITS',
+         proc: proc { |a| a.split(',') },
+         default: []
 
   option :ignoredead,
-          description: 'Also fail on dead units',
-          short: '-d',
-          default: false
+         description: 'Also fail on dead units',
+         short: '-d',
+         default: false
 
   option :ignore,
-          description: 'A comma delimited list of unit names to ignore',
-          short: '-i UNITS',
-          long: '--i UNITS'
+         description: 'A comma delimited list of unit names to ignore',
+         short: '-i UNITS',
+         long: '--ignore UNITS',
+         proc: proc { |a| a.split(',') },
+         default: ['']
 
   def run
-    #Argument setup/parsing/checking
-    cli = CheckFleetUnits.new
-    cli.parse_options
-    endpoint = cli.config[:endpoint]
-    units = cli.config[:units]
-
-    #Setup fleet client and fetch services
     begin
       Fleet.configure do |fleet|
-        fleet.fleet_api_url = endpoint
+        fleet.fleet_api_url = config[:endpoint]
       end
       client = Fleet.new
       services = client.list
-
-      if not services
-        unknown "Could not fetch fleet units"
-      end
-    rescue
-      unknown "Could not connect to fleet"
+      unknown 'Could not fetch fleet units' unless services
+    rescue => e
+      unknown "Could not connect to fleet: #{e.backtrace}"
     end
 
-    if cli.config[:ignore]
-      @@exclude_list = parse_list(cli.config[:ignore])
-    end
-
-    if units
-      service_list = checkUnitList(services,parse_list(units))
-    else #Check everything
-      service_list = checkAllUnits(services)
-    end
-
-    if service_list.length > 0
-      critical "Found failed unit(s)!: "+service_list
+    @exclude_list = config[:ignore]
+    service_list = if !config[:units].empty?
+                     check_unit_list(services, config[:units])
+                   else # Check everything
+                     check_all_units(services)
+                   end
+    unless service_list.empty?
+      critical 'Found failed unit(s)!: ' + service_list
     else
-      ok "All units running"
+      ok 'All units running'
     end
-  end#End method
+  end
 
-  def checkAllUnits(services)
-    service_list = ""
+  def check_all_units(services)
+    service_list = ''
     services.each do |entry|
-      if isUnitFailed(entry)
-        service_list += entry[:name]+" "+entry[:machine_ip]+", "
+      if unit_failed?(entry)
+        ip = if entry[:machine_ip].nil?
+               ''
+             else
+               entry[:machine_ip]
+             end
+        service_list += "#{entry[:name]}  #{ip} , "
       end
     end
-    return  service_list
-  end #End method
+    service_list
+  end
 
-  def checkUnitList(services,list)
-    hash = Hash[list.map {|x| [x, false]}]
-    service_list = ""
+  def check_unit_list(services, list)
+    hash = Hash[list.map { |x| [x, false] }]
+    service_list = ''
     services.each do |entry|
-      hash.each do |k,v|
-        if isUnitFailed(entry) and entry[:name].include?(k)
-          if not service_list.include?(entry[:name]+" "+entry[:machine_ip]+", ")
-            service_list += entry[:name]+" "+entry[:machine_ip]+", "
+      hash.each do |k, _|
+        if unit_failed?(entry) && entry[:name].include?(k)
+          unless service_list.include?("#{entry[:name]} #{entry[:machine_ip]},")
+            service_list += "#{entry[:name]} #{entry[:machine_ip]},"
           end
         end
-        if entry[:name].include?(k)
-          hash[k] = true
-        end
+        hash[k] = true if entry[:name].include?(k)
       end
     end
-    if hash.has_value?(false) #We didn't check a service, so warn since it's missing
-      warning 'Could not check all specified services(s)'
-    else
-      return service_list
-    end
-  end #End method
+    return service_list unless hash.value?(false)
+    warning 'Could not check all specified services(s)'
+  end
 
-  def isUnitFailed(entry)
-    if @@exclude_list.include?(entry[:name])
-      return false
-    end
-    if entry[:sub_state].include?("failed") or entry[:sub_state].include?("dead")
-        if not config[:ignoredead] and entry[:sub_state].include?("dead")
-          return false
-        elsif entry[:sub_state].include?("dead")
-          return true
-        else #otherwise it's failed
-          return true
-        end
+  def unit_failed?(entry)
+    return false if @exclude_list.include?(entry[:name])
+    if entry[:sub_state].include?('failed') || entry[:sub_state].include?('dead')
+      return false unless config[:ignoredead] && entry[:sub_state].include?('dead')
+      return true
     end
   end
 
   def parse_list(list)
-    if list and list.include?(',')
-      return list.split(',')
-    elsif list
-      return [ list ]
-    else
-      return ['']
-    end
+    return list.split(',') if list && list.include?(',')
+    return [list] if list
+    ['']
   end
-
-end #End class
+end
